@@ -57,12 +57,12 @@ if bruto_file and listanegra_file and deduplicador_file:
         df_neto_v1 = df_filtrado.copy()
 
     # --- APLICAR HISTÓRICO SOLO POR ENLACE ---
-    if "profile_url" in df_deduplicador.columns and not df_deduplicador.empty:
-        hist_set = set(df_deduplicador["profile_url"].dropna().unique())
-        df_neto_v2 = df_neto_v1[~df_neto_v1["profile_url"].isin(hist_set)].copy()
-    else:
-        df_neto_v2 = df_neto_v1.copy()
-
+    # if "profile_url" in df_deduplicador.columns and not df_deduplicador.empty:
+    #    hist_set = set(df_deduplicador["profile_url"].dropna().unique())
+    #    df_neto_v2 = df_neto_v1[~df_neto_v1["profile_url"].isin(hist_set)].copy()
+    #else:
+    #    df_neto_v2 = df_neto_v1.copy()
+    df_neto_v2 = df_neto_v1
     # --- SALIDA FINAL ---
     # Asegurar columnas para evitar KeyError
     for c in ["nombrecompleto", "profile_url", "current_company_position", "current_company", "telefono", "tipo_registro"]:
@@ -114,3 +114,4 @@ if bruto_file and listanegra_file and deduplicador_file:
     st.success(f"✅ Registros procesados: {len(df_final_PN)}")
 else:
     st.warning("⚠️ Sube los tres archivos para continuar.")
+
