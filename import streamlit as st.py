@@ -8,7 +8,7 @@ st.title("📊 Carga de contactos SALA para Premium Numbers")
 
 # --- SUBIR ARCHIVOS ---
 st.header("1. Subida de archivos")
-bruto_file = st.file_uploader("Sube el archivo bruto (.csv)", type="csv")
+bruto_file = st.file_uploader("Sube el archivo bruto (.xlsx)", type="xlsx")
 listanegra_file = st.file_uploader("Sube el archivo listanegra (.xlsx)", type="xlsx")
 deduplicador_file = st.file_uploader("Sube el archivo deduplicador (.xlsx)", type="xlsx")
 
@@ -20,14 +20,20 @@ if bruto_file and listanegra_file and deduplicador_file:
     df = pd.read_csv(bruto_file, sep=sep, engine="python", on_bad_lines="skip")
 
     # --- FILTRADO INICIAL ---
-    columnas_deseadas = [
-        "id", "profile_url", "original_first_name", "original_last_name",
-        "headline", "location_name", "industry",
-        "current_company", "current_company_position", "organization_url_1"
-    ]
+    columnas_deseadas = ["enlace", "nombre", "empresa", "puesto","telefono" ]
+    
+    df = df.rename(columns={
+    "enlace": "profile_url",
+    "nombre": "nombrecompleto",
+    "empresa": "current_company",
+    "puesto": "current_company_position",
+    "telefono": "telefono",
+    
+})
+
     df_filtrado = df[[col for col in columnas_deseadas if col in df.columns]]
-    df_filtrado["nombrecompleto"] = df_filtrado["original_first_name"].astype(str) + " " + df_filtrado["original_last_name"].astype(str)
-    df_filtrado = df_filtrado.drop(columns=["original_first_name", "original_last_name"])
+    # df_filtrado["nombrecompleto"] = df_filtrado["original_first_name"].astype(str) + " " + df_filtrado["original_last_name"].astype(str)
+    # df_filtrado = df_filtrado.drop(columns=["original_first_name", "original_last_name"])
     df_filtrado["tipo_registro"] = 'SALA'
 
     # --- LEER EXCELS ---
@@ -73,7 +79,7 @@ if bruto_file and listanegra_file and deduplicador_file:
         'Nombre': df_neto_v2['nombrecompleto'],
         'Numero': [f"{fecha_str}{str(i+1).zfill(4)}" for i in range(len(df_neto_v2))],
         'Agente': '', 'Grupo': 'Inercia', 'General (SI/NO/MOD)': 'MOD', 'Observaciones': '',
-        'Numero2': '', 'Numero3': '', 'Fax': '', 'Correo': '',
+        'Numero2': df_neto_v2['telefono'], 'Numero3': '', 'Fax': '', 'Correo': '',
         'Base de Datos': 'SALA_' + datetime.today().strftime('%Y-%m-%d'),
         'GESTION LISTADO PROPIO': '', 'ENLACE LINKEDIN': df_neto_v2['profile_url'],
         'PUESTO': df_neto_v2['current_company_position'], 'TELEOPERADOR': '', 'NUMERO DATO': '',
@@ -92,3 +98,5 @@ if bruto_file and listanegra_file and deduplicador_file:
     st.success(f"✅ Registros procesados: {len(df_final_PN)}")
 else:
     st.warning("⚠️ Sube los tres archivos para continuar.")
+
+
