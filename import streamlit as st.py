@@ -14,11 +14,11 @@ deduplicador_file = st.file_uploader("Sube el archivo deduplicador (.xlsx)", typ
 
 if bruto_file and listanegra_file and deduplicador_file:
     # --- LEER CSV ---
-    sample = bruto_file.read(1000).decode("utf-8", errors="replace")
-    sep = ";" if ";" in sample else ("\t" if "\t" in sample else ",")
-    bruto_file.seek(0)
-    df = pd.read_csv(bruto_file, sep=sep, engine="python", on_bad_lines="skip")
-
+    #sample = bruto_file.read(1000).decode("utf-8", errors="replace")
+    #sep = ";" if ";" in sample else ("\t" if "\t" in sample else ",")
+    #bruto_file.seek(0)
+    #df = pd.read_csv(bruto_file, sep=sep, engine="python", on_bad_lines="skip")
+    df = pd.read_excel(bruto_file)  # << leer xlsx correctamente
     # --- FILTRADO INICIAL ---
     columnas_deseadas = ["enlace", "nombre", "empresa", "puesto","telefono" ]
     
@@ -98,5 +98,4 @@ if bruto_file and listanegra_file and deduplicador_file:
     st.success(f"✅ Registros procesados: {len(df_final_PN)}")
 else:
     st.warning("⚠️ Sube los tres archivos para continuar.")
-
 
