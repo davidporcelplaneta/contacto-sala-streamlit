@@ -10,6 +10,7 @@ import streamlit as st
 st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")
 
 EXPECTED_COLUMNS = ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
+SHEET_NAME = "Sheet1"  # fijo
 
 # --------------------------
 # Funciones de normalización
@@ -66,7 +67,7 @@ def remove_if_any_column_matches(left: pd.DataFrame, right: pd.DataFrame) -> pd.
 def to_excel_bytes(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Sheet1")
+        df.to_excel(writer, index=False, sheet_name=SHEET_NAME)
     buf.seek(0)
     return buf.read()
 
@@ -80,8 +81,6 @@ st.write(
     "2) **Deduplicador**: elimina si coincide cualquiera de las columnas."
 )
 
-sheet_name = st.text_input("Nombre de hoja", value="Sheet1")
-
 col1, col2, col3 = st.columns(3)
 with col1:
     up_reparto = st.file_uploader("📥 Reparto", type=["xlsx"])
@@ -92,11 +91,11 @@ with col3:
 
 preview = st.checkbox("👁️ Mostrar previsualización (primeras 10 filas)", value=True)
 
-def read_excel_uploaded(uploaded, sheet):
+def read_excel_uploaded(uploaded):
     if not uploaded:
         return None
     try:
-        return pd.read_excel(uploaded, sheet_name=sheet)
+        return pd.read_excel(uploaded, sheet_name=SHEET_NAME)
     except Exception as e:
         st.error(f"Error leyendo el Excel: {e}")
         return None
@@ -105,21 +104,21 @@ def read_excel_uploaded(uploaded, sheet):
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     if up_reparto:
-        raw = read_excel_uploaded(up_reparto, sheet_name)
+        raw = read_excel_uploaded(up_reparto)
         if raw is not None:
             st.caption(f"**Reparto** ({len(raw)} filas)")
             if preview:
                 st.dataframe(raw.head(10))
 with col_b:
     if up_black:
-        raw = read_excel_uploaded(up_black, sheet_name)
+        raw = read_excel_uploaded(up_black)
         if raw is not None:
             st.caption(f"**Lista negra** ({len(raw)} filas)")
             if preview:
                 st.dataframe(raw.head(10))
 with col_c:
     if up_dedupe:
-        raw = read_excel_uploaded(up_dedupe, sheet_name)
+        raw = read_excel_uploaded(up_dedupe)
         if raw is not None:
             st.caption(f"**Deduplicador** ({len(raw)} filas)")
             if preview:
@@ -135,9 +134,9 @@ if st.button("🚀 Ejecutar deduplicado"):
 
     try:
         # 1) Leer
-        df_rep_raw = read_excel_uploaded(up_reparto, sheet_name)
-        df_blk_raw = read_excel_uploaded(up_black, sheet_name)
-        df_ddp_raw = read_excel_uploaded(up_dedupe, sheet_name)
+        df_rep_raw = read_excel_uploaded(up_reparto)
+        df_blk_raw = read_excel_uploaded(up_black)
+        df_ddp_raw = read_excel_uploaded(up_dedupe)
 
         # 2) Normalizar
         df_rep = normalize_df(df_rep_raw)
