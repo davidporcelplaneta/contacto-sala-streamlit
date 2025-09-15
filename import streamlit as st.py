@@ -1,117 +1,191 @@
-import streamlit as st
+# app.py
+import io
+import numpy as np
 import pandas as pd
-from datetime import datetime
+import streamlit as st
 
-st.set_page_config(page_title="Carga SALA - Premium Numbers", layout="wide")
-st.title("📊 Carga de contactos SALA para Premium Numbers")
+# --------------------------
+# Configuración general
+# --------------------------
+st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")
 
-# --- SUBIR ARCHIVOS ---
-st.header("1. Subida de archivos")
-bruto_file = st.file_uploader("Sube el archivo bruto (.xlsx)", type="xlsx")
-listanegra_file = st.file_uploader("Sube el archivo listanegra (.xlsx)", type="xlsx")
-deduplicador_file = st.file_uploader("Sube el archivo deduplicador (.xlsx)", type="xlsx")
+EXPECTED_COLUMNS = ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
 
-def normalizar_columna(df, col):
-    if col in df.columns:
-        df[col] = df[col].astype(str).str.strip().str.lower()
-    return df
+# --------------------------
+# Funciones de normalización
+# --------------------------
+def normalize_phone(s: pd.Series) -> pd.Series:
+    s = s.astype(str)
+    s = s.str.replace(r"\D+", "", regex=True)
+    s = s.replace({"": np.nan})
+    return s
 
-if bruto_file and listanegra_file and deduplicador_file:
-    # --- LEER BRUTO ---
-    df = pd.read_excel(bruto_file)
+def normalize_text(s: pd.Series) -> pd.Series:
+    s = s.astype(str).str.strip().str.lower()
+    s = s.str.replace(r"\s+", " ", regex=True)
+    s = s.replace({"nan": np.nan, "none": np.nan, "nat": np.nan})
+    return s
 
-    # RENOMBRAR a nombres internos
-    df = df.rename(columns={
-        "enlace": "profile_url",
-        "nombre": "nombrecompleto",
-        "empresa": "current_company",
-        "puesto": "current_company_position",
-        "telefono": "telefono"
-    })
+def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-    # Seleccionar columnas existentes (tras renombrar)
-    keep_cols = ["profile_url", "nombrecompleto", "current_company", "current_company_position", "telefono"]
-    keep_cols = [c for c in keep_cols if c in df.columns]
-    df_filtrado = df[keep_cols].copy()
-    df_filtrado["tipo_registro"] = "SALA"
+    out = df.copy()
+    out.columns = [c.strip().lower() for c in out.columns]
 
-    # --- LEER LISTA NEGRA e HISTÓRICO ---
-    df_lista_negra = pd.read_excel(listanegra_file).rename(columns={"enlace": "profile_url"})
-    df_deduplicador = pd.read_excel(deduplicador_file).rename(columns={"enlace": "profile_url"})
+    missing = set(EXPECTED_COLUMNS) - set(out.columns)
+    if missing:
+        raise ValueError(f"Faltan columnas obligatorias: {sorted(missing)}")
 
-    # --- NORMALIZAR SOLO 'profile_url' (enlace) ---
-    df_filtrado = normalizar_columna(df_filtrado, "profile_url")
-    df_lista_negra = normalizar_columna(df_lista_negra, "profile_url")
-    df_deduplicador = normalizar_columna(df_deduplicador, "profile_url")
+    out = out[EXPECTED_COLUMNS]
+    for col in ['enlace', 'nombre', 'empresa', 'puesto']:
+        out[col] = normalize_text(out[col])
+    out['telefono'] = normalize_phone(out['telefono'])
+    return out
 
-    # --- QUITAR DUPLICADOS DENTRO DEL PROPIO BRUTO (mismo enlace) ---
-    if "profile_url" in df_filtrado.columns:
-        df_filtrado = df_filtrado.dropna(subset=["profile_url"])
-        df_filtrado = df_filtrado.drop_duplicates(subset=["profile_url"])
+# --------------------------
+# Funciones de deduplicado
+# --------------------------
+def anti_join_all_columns(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+    if right is None or right.empty:
+        return left.copy()
+    merged = left.merge(right, on=EXPECTED_COLUMNS, how="left", indicator=True)
+    return merged[merged["_merge"] == "left_only"].drop(columns="_merge")
 
-    # --- APLICAR LISTA NEGRA SOLO POR ENLACE ---
-    if "profile_url" in df_lista_negra.columns and not df_lista_negra.empty:
-        black_set = set(df_lista_negra["profile_url"].dropna().unique())
-        df_neto_v1 = df_filtrado[~df_filtrado["profile_url"].isin(black_set)].copy()
-    else:
-        df_neto_v1 = df_filtrado.copy()
+def remove_if_any_column_matches(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+    if right is None or right.empty:
+        return left.copy()
+    keep_mask = pd.Series(True, index=left.index)
+    for col in EXPECTED_COLUMNS:
+        targets = right[col].dropna().unique()
+        if len(targets) == 0:
+            continue
+        keep_mask &= ~left[col].isin(targets)
+    return left[keep_mask]
 
-    # --- APLICAR HISTÓRICO SOLO POR ENLACE ---
-    # if "profile_url" in df_deduplicador.columns and not df_deduplicador.empty:
-    #    hist_set = set(df_deduplicador["profile_url"].dropna().unique())
-    #    df_neto_v2 = df_neto_v1[~df_neto_v1["profile_url"].isin(hist_set)].copy()
-    #else:
-    #    df_neto_v2 = df_neto_v1.copy()
-    df_neto_v2 = df_neto_v1
-    # --- SALIDA FINAL ---
-    # Asegurar columnas para evitar KeyError
-    for c in ["nombrecompleto", "profile_url", "current_company_position", "current_company", "telefono", "tipo_registro"]:
-        if c not in df_neto_v2.columns:
-            df_neto_v2[c] = ""
+def to_excel_bytes(df: pd.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Sheet1")
+    buf.seek(0)
+    return buf.read()
 
-    fecha_str = datetime.today().strftime('%d%m%Y')
-    base_nombre = 'SALA_' + datetime.today().strftime('%Y-%m-%d')
+# --------------------------
+# Interfaz Streamlit
+# --------------------------
+st.title("🧹 Deduplicador de Contactos")
 
-    df_final_PN = pd.DataFrame({
-        'Nombre': df_neto_v2['nombrecompleto'],
-        'Numero': [f"{fecha_str}{str(i+1).zfill(4)}" for i in range(len(df_neto_v2))],
-        'Agente': '',
-        'Grupo': 'Inercia',
-        'General (SI/NO/MOD)': 'MOD',
-        'Observaciones': '',
-        'Numero2': df_neto_v2['telefono'],   # mantengo el teléfono real aquí
-        'Numero3': '',
-        'Fax': '',
-        'Correo': '',
-        'Base de Datos': base_nombre,
-        'GESTION LISTADO PROPIO': '',
-        'ENLACE LINKEDIN': df_neto_v2['profile_url'],
-        'PUESTO': df_neto_v2['current_company_position'],
-        'TELEOPERADOR': '',
-        'NUMERO DATO': '',
-        'EMPRESA': df_neto_v2['current_company'],
-        'FECHA DE CONTACTO': '',
-        'FECHA DE CONTACTO (NO USAR)': '',
-        'FORMACION': '',
-        'TITULACION': '',
-        'EDAD': '',
-        'CUALIFICA': '',
-        'RESULTADO': '',
-        'FECHA DE CITA': '',
-        'FECHA DE CITA (NO USAR)': '',
-        'CITA': '',
-        'ORIGEN DATO': df_neto_v2['tipo_registro'],
-        'ASESOR': '',
-        'RESULTADO ASESOR': '',
-        'OBSERVACIONES ASESOR': '',
-        'BUSQUEDA FECHA': ''
-    })
+st.write(
+    "1) **Lista negra**: elimina coincidencias exactas en todas las columnas.\n"
+    "2) **Deduplicador**: elimina si coincide cualquiera de las columnas."
+)
 
-    st.header("2. Descarga del resultado")
-    csv = df_final_PN.to_csv(index=False, sep=';', encoding='utf-8-sig')
-    st.download_button("📥 Descargar fichero de carga SALA", csv, file_name="SALA Cargar Contactos PN.csv", mime="text/csv")
+sheet_name = st.text_input("Nombre de hoja", value="Sheet1")
 
-    st.success(f"✅ Registros procesados: {len(df_final_PN)}")
-else:
-    st.warning("⚠️ Sube los tres archivos para continuar.")
+col1, col2, col3 = st.columns(3)
+with col1:
+    up_reparto = st.file_uploader("📥 Reparto", type=["xlsx"])
+with col2:
+    up_black = st.file_uploader("🗑️ Lista negra", type=["xlsx"])
+with col3:
+    up_dedupe = st.file_uploader("🧱 Deduplicador", type=["xlsx"])
+
+preview = st.checkbox("👁️ Mostrar previsualización (primeras 10 filas)", value=True)
+
+def read_excel_uploaded(uploaded, sheet):
+    if not uploaded:
+        return None
+    try:
+        return pd.read_excel(uploaded, sheet_name=sheet)
+    except Exception as e:
+        st.error(f"Error leyendo el Excel: {e}")
+        return None
+
+# Previsualización
+col_a, col_b, col_c = st.columns(3)
+with col_a:
+    if up_reparto:
+        raw = read_excel_uploaded(up_reparto, sheet_name)
+        if raw is not None:
+            st.caption(f"**Reparto** ({len(raw)} filas)")
+            if preview:
+                st.dataframe(raw.head(10))
+with col_b:
+    if up_black:
+        raw = read_excel_uploaded(up_black, sheet_name)
+        if raw is not None:
+            st.caption(f"**Lista negra** ({len(raw)} filas)")
+            if preview:
+                st.dataframe(raw.head(10))
+with col_c:
+    if up_dedupe:
+        raw = read_excel_uploaded(up_dedupe, sheet_name)
+        if raw is not None:
+            st.caption(f"**Deduplicador** ({len(raw)} filas)")
+            if preview:
+                st.dataframe(raw.head(10))
+
+st.markdown("---")
+
+# Botón de ejecución
+if st.button("🚀 Ejecutar deduplicado"):
+    if not up_reparto or not up_black or not up_dedupe:
+        st.error("Sube los tres archivos: Reparto, Lista negra y Deduplicador.")
+        st.stop()
+
+    try:
+        # 1) Leer
+        df_rep_raw = read_excel_uploaded(up_reparto, sheet_name)
+        df_blk_raw = read_excel_uploaded(up_black, sheet_name)
+        df_ddp_raw = read_excel_uploaded(up_dedupe, sheet_name)
+
+        # 2) Normalizar
+        df_rep = normalize_df(df_rep_raw)
+        df_blk = normalize_df(df_blk_raw)
+        df_ddp = normalize_df(df_ddp_raw)
+
+        # 3) Anti-join exacto (lista negra)
+        before_ln = len(df_rep)
+        df_inter = anti_join_all_columns(df_rep, df_blk)
+        removed_ln = before_ln - len(df_inter)
+
+        # 4) Any-column match (deduplicador)
+        before_dd = len(df_inter)
+        df_final = remove_if_any_column_matches(df_inter, df_ddp)
+        removed_dd = before_dd - len(df_final)
+
+        # 5) Métricas
+        st.metric("Filas iniciales", before_ln)
+        st.metric("Eliminadas por Lista Negra", removed_ln)
+        st.metric("Eliminadas por Deduplicador", removed_dd)
+        st.metric("Filas finales", len(df_final))
+
+        st.subheader("📄 Resultado intermedio (tras Lista Negra)")
+        st.dataframe(df_inter.head(50))
+
+        st.subheader("✅ Resultado final")
+        st.dataframe(df_final.head(50))
+
+        # 6) Descargas
+        inter_bytes = to_excel_bytes(df_inter)
+        final_bytes = to_excel_bytes(df_final)
+
+        st.download_button(
+            "⬇️ Descargar intermedio (Lista Negra)",
+            data=inter_bytes,
+            file_name="contactos_reparto_deduplicado.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        st.download_button(
+            "⬇️ Descargar resultado final",
+            data=final_bytes,
+            file_name="contactos_reparto_final.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except ValueError as ve:
+        st.error(f"Validación de columnas: {ve}")
+    except Exception as e:
+        st.exception(e)
+
 
