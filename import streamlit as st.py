@@ -187,21 +187,14 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.metric("Filas iniciales", before_ln)
         st.metric("Eliminadas por Lista Negra", removed_ln)
         st.metric("Eliminadas por Deduplicador", removed_dd)
-        st.metric("Filas finales", len(df_final))
+        st.metric("Filas finales", len(df_final_PN))
 
-        st.subheader("📄 Resultado intermedio (tras Lista Negra)")
-        st.dataframe(df_inter.head(50))
+
 
         st.subheader("✅ Resultado final")
-        st.dataframe(df_final.head(50))
+        st.dataframe(df_final_PN.head(50))
 
         # 6) Descargas
-        st.download_button(
-            "⬇️ Descargar intermedio (Lista Negra)",
-            data=to_excel_bytes(df_inter),
-            file_name="contactos_reparto_deduplicado.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
         st.download_button(
             "⬇️ Descargar resultado final",
             data=to_excel_bytes(df_final),
@@ -213,6 +206,7 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error(f"Validación de columnas: {ve}")
     except Exception as e:
         st.exception(e)
+
 
 
 
