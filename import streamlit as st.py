@@ -4,40 +4,30 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# --------------------------
-# Configuración general
-# --------------------------
 st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")
 
 EXPECTED_COLUMNS = ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
-SHEET_NAME = "Sheet1"  # fijo
 
 # --------------------------
-# Funciones de normalización
+# Normalización
 # --------------------------
 def normalize_phone(s: pd.Series) -> pd.Series:
-    s = s.astype(str)
-    s = s.str.replace(r"\D+", "", regex=True)
-    s = s.replace({"": np.nan})
-    return s
+    s = s.astype(str).str.replace(r"\D+", "", regex=True)
+    return s.replace({"": np.nan})
 
 def normalize_text(s: pd.Series) -> pd.Series:
     s = s.astype(str).str.strip().str.lower()
     s = s.str.replace(r"\s+", " ", regex=True)
-    s = s.replace({"nan": np.nan, "none": np.nan, "nat": np.nan})
-    return s
+    return s.replace({"nan": np.nan, "none": np.nan, "nat": np.nan})
 
 def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
-
     out = df.copy()
     out.columns = [c.strip().lower() for c in out.columns]
-
     missing = set(EXPECTED_COLUMNS) - set(out.columns)
     if missing:
         raise ValueError(f"Faltan columnas obligatorias: {sorted(missing)}")
-
     out = out[EXPECTED_COLUMNS]
     for col in ['enlace', 'nombre', 'empresa', 'puesto']:
         out[col] = normalize_text(out[col])
@@ -45,7 +35,7 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 # --------------------------
-# Funciones de deduplicado
+# Deduplicado
 # --------------------------
 def anti_join_all_columns(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
     if right is None or right.empty:
@@ -67,76 +57,74 @@ def remove_if_any_column_matches(left: pd.DataFrame, right: pd.DataFrame) -> pd.
 def to_excel_bytes(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name=SHEET_NAME)
+        # Para el archivo de salida sí usamos un nombre de hoja fijo (no afecta a la lectura)
+        df.to_excel(writer, index=False, sheet_name="Sheet1")
     buf.seek(0)
     return buf.read()
 
 # --------------------------
-# Interfaz Streamlit
+# UI
 # --------------------------
 st.title("🧹 Deduplicador de Contactos")
-
 st.write(
     "1) **Lista negra**: elimina coincidencias exactas en todas las columnas.\n"
     "2) **Deduplicador**: elimina si coincide cualquiera de las columnas."
 )
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    up_reparto = st.file_uploader("📥 Reparto", type=["xlsx"])
-with col2:
-    up_black = st.file_uploader("🗑️ Lista negra", type=["xlsx"])
-with col3:
-    up_dedupe = st.file_uploader("🧱 Deduplicador", type=["xlsx"])
+c1, c2, c3 = st.columns(3)
+with c1:
+    up_reparto = st.file_uploader("📥 Reparto (.xlsx)", type=["xlsx"])
+with c2:
+    up_black = st.file_uploader("🗑️ Lista negra (.xlsx)", type=["xlsx"])
+with c3:
+    up_dedupe = st.file_uploader("🧱 Deduplicador (.xlsx)", type=["xlsx"])
 
-preview = st.checkbox("👁️ Mostrar previsualización (primeras 10 filas)", value=True)
+preview = st.checkbox("👁️ Previsualizar (primeras 10 filas)", value=True)
 
-def read_excel_uploaded(uploaded):
+def read_first_sheet(uploaded):
     if not uploaded:
         return None
     try:
-        return pd.read_excel(uploaded, sheet_name=SHEET_NAME)
+        # Lee la **primera hoja** (no forzamos nombre de hoja)
+        # Equivalente: pd.read_excel(uploaded, sheet_name=0)
+        return pd.read_excel(uploaded)
     except Exception as e:
         st.error(f"Error leyendo el Excel: {e}")
         return None
 
 # Previsualización
-col_a, col_b, col_c = st.columns(3)
-with col_a:
+pa, pb, pc = st.columns(3)
+with pa:
     if up_reparto:
-        raw = read_excel_uploaded(up_reparto)
+        raw = read_first_sheet(up_reparto)
         if raw is not None:
             st.caption(f"**Reparto** ({len(raw)} filas)")
-            if preview:
-                st.dataframe(raw.head(10))
-with col_b:
+            if preview: st.dataframe(raw.head(10))
+with pb:
     if up_black:
-        raw = read_excel_uploaded(up_black)
+        raw = read_first_sheet(up_black)
         if raw is not None:
             st.caption(f"**Lista negra** ({len(raw)} filas)")
-            if preview:
-                st.dataframe(raw.head(10))
-with col_c:
+            if preview: st.dataframe(raw.head(10))
+with pc:
     if up_dedupe:
-        raw = read_excel_uploaded(up_dedupe)
+        raw = read_first_sheet(up_dedupe)
         if raw is not None:
             st.caption(f"**Deduplicador** ({len(raw)} filas)")
-            if preview:
-                st.dataframe(raw.head(10))
+            if preview: st.dataframe(raw.head(10))
 
 st.markdown("---")
 
-# Botón de ejecución
+# Ejecutar
 if st.button("🚀 Ejecutar deduplicado"):
     if not up_reparto or not up_black or not up_dedupe:
         st.error("Sube los tres archivos: Reparto, Lista negra y Deduplicador.")
         st.stop()
-
     try:
-        # 1) Leer
-        df_rep_raw = read_excel_uploaded(up_reparto)
-        df_blk_raw = read_excel_uploaded(up_black)
-        df_ddp_raw = read_excel_uploaded(up_dedupe)
+        # 1) Leer primera hoja de cada archivo
+        df_rep_raw = read_first_sheet(up_reparto)
+        df_blk_raw = read_first_sheet(up_black)
+        df_ddp_raw = read_first_sheet(up_dedupe)
 
         # 2) Normalizar
         df_rep = normalize_df(df_rep_raw)
@@ -153,7 +141,7 @@ if st.button("🚀 Ejecutar deduplicado"):
         df_final = remove_if_any_column_matches(df_inter, df_ddp)
         removed_dd = before_dd - len(df_final)
 
-        # 5) Métricas
+        # 5) Métricas y resultados
         st.metric("Filas iniciales", before_ln)
         st.metric("Eliminadas por Lista Negra", removed_ln)
         st.metric("Eliminadas por Deduplicador", removed_dd)
@@ -166,18 +154,15 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.dataframe(df_final.head(50))
 
         # 6) Descargas
-        inter_bytes = to_excel_bytes(df_inter)
-        final_bytes = to_excel_bytes(df_final)
-
         st.download_button(
             "⬇️ Descargar intermedio (Lista Negra)",
-            data=inter_bytes,
+            data=to_excel_bytes(df_inter),
             file_name="contactos_reparto_deduplicado.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
         st.download_button(
             "⬇️ Descargar resultado final",
-            data=final_bytes,
+            data=to_excel_bytes(df_final),
             file_name="contactos_reparto_final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
@@ -186,5 +171,6 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error(f"Validación de columnas: {ve}")
     except Exception as e:
         st.exception(e)
+
 
 
