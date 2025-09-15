@@ -3,8 +3,9 @@ import io
 import numpy as np
 import pandas as pd
 import streamlit as st
+from datetime import datetime
 
-st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")
+st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")from datetime import datetime
 
 EXPECTED_COLUMNS = ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
 
@@ -141,6 +142,47 @@ if st.button("🚀 Ejecutar deduplicado"):
         df_final = remove_if_any_column_matches(df_inter, df_ddp)
         removed_dd = before_dd - len(df_final)
 
+
+        # 4.1) Formato salida PN
+        fecha_str = datetime.today().strftime('%d%m%Y')
+        base_nombre = 'SALA_' + datetime.today().strftime('%Y-%m-%d')
+        df_final["tipo_registro"] = "SALA"
+        # columnas actuales ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
+        df_final_PN = pd.DataFrame({
+            'Nombre': df_final['nombre'],
+            'Numero': [f"{fecha_str}{str(i+1).zfill(4)}" for i in range(len(df_final))],
+            'Agente': '',
+            'Grupo': 'Inercia',
+            'General (SI/NO/MOD)': 'MOD',
+            'Observaciones': '',
+            'Numero2': df_final['telefono'],   # mantengo el teléfono real aquí
+            'Numero3': '',
+            'Fax': '',
+            'Correo': '',
+            'Base de Datos': base_nombre,
+            'GESTION LISTADO PROPIO': '',
+            'ENLACE LINKEDIN': df_final['enlace'],
+            'PUESTO': df_final['puesto'],
+            'TELEOPERADOR': '',
+            'NUMERO DATO': '',
+            'EMPRESA': df_final['empresa'],
+            'FECHA DE CONTACTO': '',
+            'FECHA DE CONTACTO (NO USAR)': '',
+            'FORMACION': '',
+            'TITULACION': '',
+            'EDAD': '',
+            'CUALIFICA': '',
+            'RESULTADO': '',
+            'FECHA DE CITA': '',
+            'FECHA DE CITA (NO USAR)': '',
+            'CITA': '',
+            'ORIGEN DATO': df_final['tipo_registro'],
+            'ASESOR': '',
+            'RESULTADO ASESOR': '',
+            'OBSERVACIONES ASESOR': '',
+            'BUSQUEDA FECHA': ''
+        })
+
         # 5) Métricas y resultados
         st.metric("Filas iniciales", before_ln)
         st.metric("Eliminadas por Lista Negra", removed_ln)
@@ -171,6 +213,7 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error(f"Validación de columnas: {ve}")
     except Exception as e:
         st.exception(e)
+
 
 
 
