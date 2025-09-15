@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 
-st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")from datetime import datetime
+st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")
 
 EXPECTED_COLUMNS = ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
 
@@ -213,6 +213,7 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error(f"Validación de columnas: {ve}")
     except Exception as e:
         st.exception(e)
+
 
 
 
