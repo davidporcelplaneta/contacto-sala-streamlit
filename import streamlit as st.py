@@ -7,6 +7,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")
 
+# Solo exigimos 'enlace' como columna obligatoria
 EXPECTED_COLUMNS = ['enlace']
 
 # --------------------------
@@ -23,16 +24,28 @@ def normalize_text(s: pd.Series) -> pd.Series:
 
 def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
+        # Devolvemos DF vacío con al menos la columna obligatoria
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
+
     out = df.copy()
     out.columns = [c.strip().lower() for c in out.columns]
+
+    # Validar que exista 'enlace'
     missing = set(EXPECTED_COLUMNS) - set(out.columns)
     if missing:
         raise ValueError(f"Faltan columnas obligatorias: {sorted(missing)}")
-    out = out[EXPECTED_COLUMNS]
-    for col in ['enlace']:
-        out[col] = normalize_text(out[col])
-    out['telefono'] = normalize_phone(out['telefono'])
+
+    # NO recortamos a EXPECTED_COLUMNS: conservamos todo lo que venga
+    # Normalizamos lo que exista
+    if 'enlace' in out.columns:
+        out['enlace'] = normalize_text(out['enlace'])
+    if 'telefono' in out.columns:
+        out['telefono'] = normalize_phone(out['telefono'])
+    # Opcional: normaliza otros textos si existen
+    for c in ['nombre', 'empresa', 'puesto', 'correo']:
+        if c in out.columns:
+            out[c] = normalize_text(out[c])
+
     return out
 
 # --------------------------
@@ -41,7 +54,8 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
 def anti_join_all_columns(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
     if right is None or right.empty:
         return left.copy()
-    merged = left.merge(right, on=EXPECTED_COLUMNS, how="left", indicator=True)
+    # Anti-join por las columnas obligatorias (ahora solo 'enlace')
+    merged = left.merge(right[EXPECTED_COLUMNS], on=EXPECTED_COLUMNS, how="left", indicator=True)
     return merged[merged["_merge"] == "left_only"].drop(columns="_merge")
 
 def remove_if_any_column_matches(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
@@ -49,6 +63,8 @@ def remove_if_any_column_matches(left: pd.DataFrame, right: pd.DataFrame) -> pd.
         return left.copy()
     keep_mask = pd.Series(True, index=left.index)
     for col in EXPECTED_COLUMNS:
+        if col not in right.columns or col not in left.columns:
+            continue
         targets = right[col].dropna().unique()
         if len(targets) == 0:
             continue
@@ -58,7 +74,6 @@ def remove_if_any_column_matches(left: pd.DataFrame, right: pd.DataFrame) -> pd.
 def to_excel_bytes(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-        # Para el archivo de salida sí usamos un nombre de hoja fijo (no afecta a la lectura)
         df.to_excel(writer, index=False, sheet_name="Sheet1")
     buf.seek(0)
     return buf.read()
@@ -68,8 +83,8 @@ def to_excel_bytes(df: pd.DataFrame) -> bytes:
 # --------------------------
 st.title("🧹 Deduplicador de Contactos")
 st.write(
-    "1) **Lista negra**: elimina coincidencias exactas en todas las columnas.\n"
-    "2) **Deduplicador**: elimina si coincide cualquiera de las columnas."
+    "1) **Lista negra**: elimina coincidencias exactas en todas las columnas obligatorias (ahora solo `enlace`).\n"
+    "2) **Deduplicador**: elimina si coincide cualquiera de las columnas obligatorias (ahora solo `enlace`)."
 )
 
 c1, c2, c3 = st.columns(3)
@@ -86,9 +101,7 @@ def read_first_sheet(uploaded):
     if not uploaded:
         return None
     try:
-        # Lee la **primera hoja** (no forzamos nombre de hoja)
-        # Equivalente: pd.read_excel(uploaded, sheet_name=0)
-        return pd.read_excel(uploaded)
+        return pd.read_excel(uploaded)  # primera hoja
     except Exception as e:
         st.error(f"Error leyendo el Excel: {e}")
         return None
@@ -122,7 +135,7 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error("Sube los tres archivos: Reparto, Lista negra y Deduplicador.")
         st.stop()
     try:
-        # 1) Leer primera hoja de cada archivo
+        # 1) Leer
         df_rep_raw = read_first_sheet(up_reparto)
         df_blk_raw = read_first_sheet(up_black)
         df_ddp_raw = read_first_sheet(up_dedupe)
@@ -142,30 +155,37 @@ if st.button("🚀 Ejecutar deduplicado"):
         df_final = remove_if_any_column_matches(df_inter, df_ddp)
         removed_dd = before_dd - len(df_final)
 
-
         # 4.1) Formato salida PN
         fecha_str = datetime.today().strftime('%d%m%Y')
         base_nombre = 'SALA_' + datetime.today().strftime('%Y-%m-%d')
+        df_final = df_final.copy()
         df_final["tipo_registro"] = "SALA"
-        # columnas actuales ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
+
+        # Tomamos columnas si existen; si no, vacías
+        nombre   = df_final['nombre']   if 'nombre'   in df_final.columns else pd.Series(['']*len(df_final))
+        empresa  = df_final['empresa']  if 'empresa'  in df_final.columns else pd.Series(['']*len(df_final))
+        puesto   = df_final['puesto']   if 'puesto'   in df_final.columns else pd.Series(['']*len(df_final))
+        telefono = df_final['telefono'] if 'telefono' in df_final.columns else pd.Series(['']*len(df_final))
+        enlace   = df_final['enlace']   if 'enlace'   in df_final.columns else pd.Series(['']*len(df_final))
+
         df_final_PN = pd.DataFrame({
-            'Nombre': df_final['nombre'],
+            'Nombre': nombre,
             'Numero': [f"{fecha_str}{str(i+1).zfill(4)}" for i in range(len(df_final))],
             'Agente': '',
             'Grupo': 'Inercia',
             'General (SI/NO/MOD)': 'MOD',
             'Observaciones': '',
-            'Numero2': df_final['telefono'],   # mantengo el teléfono real aquí
+            'Numero2': telefono,   # teléfono real aquí (si existe)
             'Numero3': '',
             'Fax': '',
-            'Correo': '',
+            'Correo': df_final['correo'] if 'correo' in df_final.columns else '',
             'Base de Datos': base_nombre,
             'GESTION LISTADO PROPIO': '',
-            'ENLACE LINKEDIN': df_final['enlace'],
-            'PUESTO': df_final['puesto'],
+            'ENLACE LINKEDIN': enlace,
+            'PUESTO': puesto,
             'TELEOPERADOR': '',
             'NUMERO DATO': '',
-            'EMPRESA': df_final['empresa'],
+            'EMPRESA': empresa,
             'FECHA DE CONTACTO': '',
             'FECHA DE CONTACTO (NO USAR)': '',
             'FORMACION': '',
@@ -189,15 +209,13 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.metric("Eliminadas por Deduplicador", removed_dd)
         st.metric("Filas finales", len(df_final_PN))
 
-
-
         st.subheader("✅ Resultado final")
         st.dataframe(df_final_PN.head(50))
 
-        # 6) Descargas
+        # 6) Descarga (ahora descarga el PN que visualizas)
         st.download_button(
             "⬇️ Descargar resultado final",
-            data=to_excel_bytes(df_final),
+            data=to_excel_bytes(df_final_PN),
             file_name="contactos_reparto_final.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
@@ -206,11 +224,3 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error(f"Validación de columnas: {ve}")
     except Exception as e:
         st.exception(e)
-
-
-
-
-
-
-
-
