@@ -7,7 +7,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Deduplicador Contactos", page_icon="🧹", layout="wide")
 
-EXPECTED_COLUMNS = ['enlace', 'nombre', 'empresa', 'puesto', 'telefono']
+EXPECTED_COLUMNS = ['enlace']
 
 # --------------------------
 # Normalización
@@ -206,6 +206,7 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error(f"Validación de columnas: {ve}")
     except Exception as e:
         st.exception(e)
+
 
 
 
