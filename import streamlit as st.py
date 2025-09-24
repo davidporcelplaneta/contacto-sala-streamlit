@@ -30,7 +30,7 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Faltan columnas obligatorias: {sorted(missing)}")
     out = out[EXPECTED_COLUMNS]
-    for col in ['enlace', 'nombre', 'empresa', 'puesto']:
+    for col in ['enlace']:
         out[col] = normalize_text(out[col])
     out['telefono'] = normalize_phone(out['telefono'])
     return out
@@ -206,6 +206,7 @@ if st.button("🚀 Ejecutar deduplicado"):
         st.error(f"Validación de columnas: {ve}")
     except Exception as e:
         st.exception(e)
+
 
 
 
